@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP Monitor</title>
+<style>
+  :root{
+    --bg:#f3f6f4; --card:#fff; --ink:#17231f; --muted:#5d6b66; --line:#dce4df;
+    --ok:#1f6b52; --ok-bg:#dcefe6; --warn:#a4380f; --warn-bg:#fbe3d6; --accent:#1f6b52;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#111916; --card:#18221e; --ink:#e7eee9; --muted:#93a39b; --line:#2b3a34;
+      --ok:#6fd1a8; --ok-bg:#16352a; --warn:#ff9d73; --warn-bg:#3d2014; --accent:#6fd1a8; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:24px 16px 48px}
+  main{max-width:720px;margin:0 auto;display:grid;gap:16px}
+  .navbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 2px 6px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em}
+  .brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--ok-bg);color:var(--ok);font-size:.8rem}
+  .nav-notifications{display:flex;align-items:center;gap:8px}
+  .nav-state{font-size:.78rem;color:var(--muted)}
+  h1{font-size:1.35rem;margin:0 0 4px;letter-spacing:-.03em}
+  p.sub{margin:0;color:var(--muted);font-size:.95rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 4px 16px rgba(23,35,31,.035)}
+  .banner{display:none;border-radius:10px;padding:16px 18px;background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn)}
+  .banner.show{display:block}
+  .banner strong{display:block;margin-bottom:4px}
+  .banner button{margin-top:10px}
+  .ip{font:600 clamp(1.8rem,8vw,2.6rem)/1.1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;margin:8px 0 18px;letter-spacing:-.04em}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  button{font:inherit;font-size:.92rem;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:var(--bg);cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+  button:focus-visible,input:focus-visible{outline:3px solid var(--ok);outline-offset:2px}
+  label{display:block;font-size:.9rem;color:var(--muted);margin:12px 0 4px}
+  input[type=text]{width:100%;font:inherit;padding:9px 11px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+  small{color:var(--muted)}
+  ul{list-style:none;margin:8px 0 0;padding:0}
+  li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:.92rem}
+  li code{font-family:ui-monospace,Menlo,Consolas,monospace}
+  li span{color:var(--muted);text-align:right}
+  h2{font-size:1rem;margin:0 0 4px}
+  .meta{color:var(--muted);font-size:.85rem;margin-top:10px}
+  dialog{width:min(520px,calc(100% - 24px));max-height:calc(100vh - 24px);overflow:auto;margin:12px auto auto;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);box-shadow:0 18px 60px rgba(0,0,0,.2)}
+  dialog::backdrop{background:rgba(12,20,16,.48);backdrop-filter:blur(2px)}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+  .modal-head h2{font-size:1.05rem;margin:0}
+  .modal-content{padding:20px}
+  .close-modal{padding:5px 10px;font-size:1.2rem;line-height:1}
+  @media(max-width:480px){body{padding:16px 12px 32px}.card{padding:16px}.nav-state{display:none}}
+</style>
+</head>
+<body>
+<main>
+  <nav class="navbar" aria-label="Main navigation">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">IP</span><span>IP Monitor</span></div>
+    <div class="nav-notifications">
+      <small class="nav-state" id="notificationSummary">Alerts off</small>
+      <button class="ghost" id="openNotifications" type="button">Notifications</button>
+    </div>
+  </nav>
+
+  <header>
+    <h1>Public IP status</h1>
+    <p class="sub">Watches your public IP and warns you when it changes, so you can update your DigitalOcean database trusted sources.</p>
+  </header>
+
+  <div class="banner" id="banner" role="alert">
+    <strong>Your IP address has changed</strong>
+    <span id="bannerText"></span>
+    <div><button id="ackBtn">I recognise this network</button></div>
+  </div>
+
+  <section class="card">
+    <small>Your current public IP</small>
+    <div class="ip" id="ip">Checking…</div>
+    <div class="row">
+      <button id="copyIp">Copy IP</button>
+      <button class="ghost" id="copyCidr">Copy as /32 for DigitalOcean</button>
+      <button class="ghost" id="refresh">Check now</button>
+    </div>
+    <div class="meta" id="meta">&nbsp;</div>
+  </section>
+
+  <section class="card">
+    <h2>History</h2>
+    <ul id="history"></ul>
+    <div style="margin-top:12px"><button class="ghost" id="clear">Clear history</button></div>
+  </section>
+</main>
+
+<dialog id="notificationModal" aria-labelledby="notificationTitle">
+  <div class="modal-content">
+    <div class="modal-head">
+      <h2 id="notificationTitle">Notification manager</h2>
+      <button class="ghost close-modal" id="closeNotifications" type="button" aria-label="Close notifications">&times;</button>
+    </div>
+    <small>Browser alerts work while this tab stays open. For alerts on your phone, add a free ntfy topic.</small>
+    <div class="row" style="margin-top:12px">
+      <button class="ghost" id="notifyBtn" type="button">Enable browser notifications</button>
+      <small id="notifyState"></small>
+    </div>
+    <label for="ntfy">ntfy topic (optional)</label>
+    <input type="text" id="ntfy" placeholder="a long random name, e.g. my-ip-alerts-7f3k9x" autocomplete="off">
+    <small>Install the ntfy app, subscribe to the same topic, and you get a push when the IP changes. Anyone who knows the topic name can read it, so keep it random.</small>
+  </div>
+</dialog>
+
+<script>
+(function(){
+  var CHECK_MS = 60000;
+  var SOURCES = ["https://api.ipify.org?format=json","https://api64.ipify.org?format=json"];
+  var $ = function(id){return document.getElementById(id)};
+  var currentIp = null, baseTitle = document.title;
+
+  function load(k, d){ try{ var v = localStorage.getItem(k); return v===null? d : JSON.parse(v); }catch(e){ return d; } }
+  function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+
+  var state = {
+    lastIp: load("lastIp", null),
+    history: load("history", []),
+    ntfy: load("ntfy", ""),
+    pending: load("pending", null)
+  };
+
+  function fmt(t){ return new Date(t).toLocaleString(); }
+
+  function render(){
+    $("ip").textContent = currentIp || "Unavailable";
+    if(document.activeElement !== $("ntfy")) $("ntfy").value = state.ntfy;
+    var ul = $("history"); ul.innerHTML = "";
+    if(!state.history.length){ ul.innerHTML = "<li><span>No IPs recorded yet.</span></li>"; }
+    state.history.forEach(function(h){
+      var li = document.createElement("li");
+      var c = document.createElement("code"); c.textContent = h.ip;
+      var s = document.createElement("span"); s.textContent = fmt(h.t);
+      li.appendChild(c); li.appendChild(s); ul.appendChild(li);
+    });
+    var b = $("banner");
+    if(state.pending){
+      $("bannerText").textContent = "It changed from " + state.pending.from + " to " + state.pending.to + " at " + fmt(state.pending.t) +
+        ". If you did not switch Wi-Fi or mobile data, check whether you joined an unknown network. Then update your database Trusted Sources or reconnect to your usual network.";
+      b.classList.add("show");
+      document.title = "(!) IP changed";
+    } else { b.classList.remove("show"); document.title = baseTitle; }
+    $("notifyState").textContent = ("Notification" in window) ? "Permission: " + Notification.permission : "Not supported in this browser";
+    $("notificationSummary").textContent = (("Notification" in window && Notification.permission === "granted") || state.ntfy) ? "Alerts on" : "Alerts off";
+  }
+
+  async function fetchIp(){
+    for(var i=0;i<SOURCES.length;i++){
+      try{
+        var r = await fetch(SOURCES[i], {cache:"no-store"});
+        var j = await r.json();
+        if(j && j.ip) return j.ip;
+      }catch(e){}
+    }
+    return null;
+  }
+
+  function alertChange(from, to){
+    var msg = "IP changed from " + from + " to " + to + ". Check your network and update database Trusted Sources.";
+    if("Notification" in window && Notification.permission === "granted"){
+      try{ new Notification("Your IP address changed", {body: msg}); }catch(e){}
+    }
+    if(state.ntfy){
+      fetch("https://ntfy.sh/" + encodeURIComponent(state.ntfy.trim()), {
+        method:"POST", body: msg, headers:{"Title":"IP address changed","Priority":"high"}
+      }).catch(function(){});
+    }
+  }
+
+  async function check(){
+    $("meta").textContent = "Checking…";
+    var ip = await fetchIp();
+    if(!ip){ $("meta").textContent = "Could not reach the IP service. Check your internet connection."; render(); return; }
+    currentIp = ip;
+    var now = Date.now();
+    if(state.lastIp && state.lastIp !== ip){
+      state.pending = {from: state.lastIp, to: ip, t: now};
+      save("pending", state.pending);
+      alertChange(state.lastIp, ip);
+    }
+    if(state.lastIp !== ip){
+      state.history.unshift({ip: ip, t: now});
+      state.history = state.history.slice(0, 20);
+      save("history", state.history);
+    }
+    state.lastIp = ip; save("lastIp", ip);
+    $("meta").textContent = "Last checked " + fmt(now) + ". Rechecks every minute while this page is open.";
+    render();
+  }
+
+  function copy(text, btn){
+    var old = btn.textContent;
+    function done(){ btn.textContent = "Copied"; setTimeout(function(){ btn.textContent = old; }, 1400); }
+    if(navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else fallback();
+    function fallback(){
+      var t = document.createElement("textarea"); t.value = text; document.body.appendChild(t);
+      t.select(); try{ document.execCommand("copy"); done(); }catch(e){} document.body.removeChild(t);
+    }
+  }
+
+  $("copyIp").onclick = function(){ if(currentIp) copy(currentIp, this); };
+  $("copyCidr").onclick = function(){ if(currentIp) copy(currentIp + "/32", this); };
+  $("refresh").onclick = check;
+  $("ackBtn").onclick = function(){ state.pending = null; save("pending", null); render(); };
+  $("clear").onclick = function(){ state.history = []; save("history", []); render(); };
+  $("ntfy").oninput = function(){
+    state.ntfy = this.value.trim();
+    save("ntfy", state.ntfy);
+    $("notificationSummary").textContent = (("Notification" in window && Notification.permission === "granted") || state.ntfy) ? "Alerts on" : "Alerts off";
+  };
+  $("openNotifications").onclick = function(){ $("notificationModal").showModal(); };
+  $("closeNotifications").onclick = function(){ $("notificationModal").close(); };
+  $("notificationModal").addEventListener("click", function(event){
+    if(event.target === this) this.close();
+  });
+  $("notifyBtn").onclick = function(){
+    if(!("Notification" in window)) return;
+    Notification.requestPermission().then(render);
+  };
+
+  window.addEventListener("online", check);
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) check(); });
+  setInterval(check, CHECK_MS);
+  render(); check();
+})();
+</script>
+</body>
+</html>
